@@ -1,0 +1,62 @@
+x-app-environment: &app-environment
+  MONGODB_URI: mongodb://mongo:27017
+  MONGODB_DATABASE: ${MONGODB_DATABASE:-document_insights}
+  REDIS_URL: redis://redis:6379/0
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  MAX_ACTIVE_DOCUMENTS_PER_USER: ${MAX_ACTIVE_DOCUMENTS_PER_USER:-3}
+  SUMMARY_CACHE_TTL_SECONDS: ${SUMMARY_CACHE_TTL_SECONDS:-3600}
+  ACTIVE_JOB_TTL_SECONDS: ${ACTIVE_JOB_TTL_SECONDS:-900}
+  WORKER_MIN_PROCESSING_SECONDS: ${WORKER_MIN_PROCESSING_SECONDS:-10}
+  WORKER_MAX_PROCESSING_SECONDS: ${WORKER_MAX_PROCESSING_SECONDS:-30}
+  WORKER_FAILURE_RATE: ${WORKER_FAILURE_RATE:-0.1}
+
+services:
+  api:
+    build: .
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment: *app-environment
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["python", "-m", "app.workers.document_worker"]
+    environment: *app-environment
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    stop_grace_period: 45s
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  redis_data:
